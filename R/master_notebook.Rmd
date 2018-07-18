@@ -1,0 +1,94 @@
+---
+title: "Master analysis for global MDM analysis project"
+output: html_notebook
+---
+# Description
+
+# Analysis of all metagenomic data
+
+
+
+```{r, fine_bins_no_envt}
+
+# Clear the workspace
+library(tidyverse)
+library(scales)
+
+rm(list = ls()) # ls() creates a list of all objects in memory. rm deletes all those objects
+
+#Count number of sequences within each environment that have a given range of percent identities
+
+metagenomes_to_count <- read_csv("data/All_metagenomes_over90_length_to_either_culture_or_NR_sizes.csv")
+metagenomes_to_count$Domain <- ifelse(grepl("^Arc_", metagenomes_to_count$sseqid.x), "Archaea", "Bacteria")
+metagenomes_to_count$Genome_ID <- as.character(metagenomes_to_count$Genome_ID)
+
+# Tweak environment categories (although I think it doesn't matter here?)
+metagenomes_to_count$Environment_KL[metagenomes_to_count$Environment_KL == "human"] <- "Human"
+
+# Make similarity bins
+metagenomes_to_count <- metagenomes_to_count %>%
+select(Domain, Environment_KL, Genome_ID, pident.against.cultures, Scaffold_Read_Depth) %>%
+  mutate(Similarity_bin = cut(pident.against.cultures, 
+                              breaks = c(-Inf, seq(from=70, to=99.5, by=0.5), Inf),
+                              labels = paste0(">", seq(from=69.5, to=99.5, by=0.5)),
+                              right = FALSE,
+                              include.lowest = TRUE)) 
+
+# Create numeric similarity bins
+num.bins <- seq(from = 69.5, to = 99.5, by = 0.5)
+names(num.bins) <- paste0(">", seq(from=69.5, to=99.5, by=0.5))
+
+metagenomes_to_count <- metagenomes_to_count %>%
+  mutate(numeric.bins = num.bins[Similarity_bin])
+
+
+
+# THis is causing some kind of odd little probelm - not sure what, but all it does is introduce unneccessary NAs which I remove later
+uniques <- expand.grid(Domain = unique(metagenomes_to_count$Domain), 
+                       # Environment_KL = unique(metagenomes_to_count$Environment_KL),
+                       Genome_ID = unique(metagenomes_to_count$Genome_ID),
+                       Similarity_bin = unique(metagenomes_to_count$Similarity_bin), 
+                       stringsAsFactors = FALSE)
+
+
+# For each domain, environment type, calculate the percent of each metagenome that is in each bin
+read_depth_per_narrow_bin <- metagenomes_to_count %>%
+  na.omit() %>%
+  #right_join(uniques, by = c("Domain", "Genome_ID", "Similarity_bin")) %>%
+  mutate(Scaffold_Read_Depth = ifelse(is.na(Scaffold_Read_Depth), 0,
+                                      Scaffold_Read_Depth)) %>%
+  select(Domain, Similarity_bin, numeric.bins, Scaffold_Read_Depth) %>% # For convenience when I'm looking at the DF
+
+  # Calculate the sum sequence read depth for each domain
+  group_by(Domain) %>%
+  mutate(total.read.depth = sum(Scaffold_Read_Depth))  %>%
+  
+  # Then calculate the fraction of that read depth taht is in each bin
+  group_by(Domain, Similarity_bin, numeric.bins) %>%
+  summarise(PctN = sum(Scaffold_Read_Depth) / total.read.depth[1]) %>%
+ 
+  # Check that the percentages add to 1
+  group_by(Domain) %>%
+  mutate(check.sum = sum(PctN))
+
+
+# Plot
+p_all_envts <- ggplot(read_depth_per_narrow_bin, aes(x=numeric.bins/100, y=PctN)) + 
+  geom_line() + 
+  geom_vline(xintercept = c(0.966, 0.86), colour = "darkgray") +
+  scale_x_reverse(labels = percent) + 
+  scale_y_continuous(labels = percent) + 
+  xlab("Similarity to closest cultured representative") + 
+  ylab("Fraction in bin") +
+  facet_wrap(~Domain) + 
+  theme_bw() 
+print(p_all_envts) # No rows removed! All is well
+# ggsave("plots/draft_read_depth_similarity.png", height = 3, width = 5, units = "in", dpi = 300)
+
+
+# write_csv(read_depth_per_narrow_bin, "results/all_metagenomes_w_read_depth_0-5_percent_bins.csv")
+
+
+```
+
+

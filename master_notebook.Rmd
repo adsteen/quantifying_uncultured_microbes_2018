@@ -1,0 +1,666 @@
+---
+title: "Master analysis for global MDM analysis project"
+output: html_notebook
+---
+# Description
+
+# Analysis of all metagenomic data
+
+Setup R stuff:
+```{r, setup, message=FALSE}
+library(tidyverse)
+library(stringr)
+library(scales)
+library(rwantshue)
+library(forcats)
+library(viridis)
+
+source("R/preprocess_ome_data.R")
+source("R/remove_end_paren.R")
+source("R/as_unclassified.R")
+
+# Functions to process and plot the rank order data,
+source("R/preprocess_for_rank_abund.R")
+source("R/process_rank_order_data_v2.R")
+source("R/rank_order_plot.R")
+source("R/remove_end_paren.R")
+source("R/process_abundance_no_read_depth.R")
+
+# THese are used for the plot of % in each bin, without read depth, by environment
+source("R/metagenomes_no_read_depth.R")
+source("R/transcripts_no_read_depth.R") 
+source("R/amplicons_no_read_depth.R") 
+
+save.files <- FALSE
+print.plots <- TRUE
+# Make sure that this file is saved in the same directory as the R project so paths work
+```
+
+
+
+
+
+# Rank-abundance plots, with insets, for each environment FOR METAGENOMES AND METATRANSCRIPTOMES
+```{r, rank_abund, message=FALSE, warning=FALSE}
+
+# Load metagenome data (no read depth) for rank abundance plot
+met <- preprocess_ome_data(ome.fn = "data/All_metagenomes_over90_length_to_either_culture_or_NR_sizes.csv",
+                                     mothur.fn.primary = "data/metagenomes_all.filter.precluster.nr_v128.wang.csv",
+                                     mothur.fn.secondary = "data/metagenomes_ones_that_didnt_classify.nr_v132.wang.taxonomy",
+                                     ome.type = "metagenome",
+                                     save.files = save.files)
+# Load metatranscriptome data (no read depth) for rank abundance plot
+trans <- preprocess_ome_data(ome.fn = "data/transcriptomes_all_over90pct_alignedNR_or_cultures.csv",
+                             mothur.fn.primary = "data/transcriptomes.precluster.nr_v132.wang.csv",
+                             mothur.fn.secondary = "data/transcriptomes_ones_that_didnt_classify.nr_v132.wang.taxonomy",
+                             ome.type = "metatranscriptome",
+                             save.files = save.files) 
+
+met_preprocessed <- preprocess_for_rank_abund(met)
+trans_preprocessed <- preprocess_for_rank_abund(trans)
+
+
+# Calculate rank order, save plots
+#
+for(i in seq_along(unique(met_preprocessed$Environment_KL))) {
+  curr.envt <- unique(met_preprocessed$Environment_KL)[i]
+  curr_df <- filter(met_preprocessed, Environment_KL == curr.envt)
+  #print(curr.envt)
+  process_rank_order_data_v2(curr_df, ome.type = "metagenome", envt = curr.envt)
+}
+
+for(i in seq_along(unique(trans_preprocessed$Environment_KL))) {
+  curr.envt <- unique(trans_preprocessed$Environment_KL)[i]
+  curr_df <- filter(trans_preprocessed, Environment_KL == curr.envt)
+  #print(curr.envt)
+  process_rank_order_data_v2(curr_df, ome.type = "metatranscriptome", envt = curr.envt)
+}
+```
+# Calculate fraction of Bac and Arc in broad similarity bins accounting for read depth
+
+```{r, broad_sim_bins}
+# All metagenomes w/ read depth into broad bins (cultured, semicultured, uncultured)
+mg_16S_coarsebin <- met %>%
+  select(Locus_Tag, Genome_ID, Environment_KL, Domain.mg, Domain.mothur, Phylum, Class, Order, Family, Genus, full.tax, pident.against.cultures, Scaffold_Read_Depth)
+
+# Make similarity bins
+mg_16S_coarsebin <- mg_16S_coarsebin %>%
+  select(Domain.mg, Environment_KL, Genome_ID, pident.against.cultures, Scaffold_Read_Depth) %>%
+  mutate(Similarity_bin = cut(pident.against.cultures, 
+                              breaks = c(-Inf, 86, 96.6 + 1e-8, Inf),
+                              labels = c("Uncultured phyla", "Uncultured genera to classes", "Cultured"),
+                              right = FALSE,
+                              include.lowest = TRUE),
+         Similarity_bin = factor(Similarity_bin, levels = c("Cultured", "Uncultured genera to classes", "Uncultured phyla"), ordered = TRUE))
+# # I'm not totally convinced this is necessary.
+# # The idea was to make sure there are zeroes for every category that exists but is unpopulated, but why do we need that?
+# uniques <- expand.grid(Domain.mg = unique(mg_16S_coarsebin$Domain.mg),
+#                        # Environment_KL = unique(metagenomes_to_count$Environment_KL),
+#                        Genome_ID = unique(mg_16S_coarsebin$Genome_ID),
+#                        Similarity_bin = unique(mg_16S_coarsebin$Similarity_bin),
+#                        stringsAsFactors = FALSE)
+
+# For each domain, environment type, calculate the percent of each metagenome that is in each bin
+read_depth_per_coarse_bin <-mg_16S_coarsebin %>%
+  na.omit() %>%
+  #right_join(uniques, by = c("Domain", "Genome_ID", "Similarity_bin")) %>%
+  mutate(Scaffold_Read_Depth = ifelse(is.na(Scaffold_Read_Depth), 0, Scaffold_Read_Depth)) %>%
+  select(Domain.mg, Similarity_bin, Scaffold_Read_Depth) %>% # For convenience when I'm looking at the DF
+  
+  # Calculate the sum sequence read depth for each domain
+  group_by(Domain.mg) %>%
+  mutate(total.read.depth = sum(Scaffold_Read_Depth))  %>%
+  
+  # Then calculate the fraction of that read depth taht is in each bin
+  group_by(Domain.mg, Similarity_bin) %>%
+  summarise(PctN = sum(Scaffold_Read_Depth) / total.read.depth[1]) %>%
+  
+  # Check that the percentages add to 1
+  group_by(Domain.mg) %>%
+  mutate(check.sum = sum(PctN))
+
+if(save.files) {
+  write_csv(read_depth_per_coarse_bin, "results/all_metagenomes_w_read_depth_coarse_bins.csv")
+}
+
+```
+
+
+```{r Table1}
+# Rewrite of table 1: sequence abundance per each environment, without regard to domain
+# Will calculate this using read depth for metagenomes, but simple read abundance for transcripts
+# Because read depth is not available
+
+read_depth_per_coarse_bin_table1 <-mg_16S_coarsebin %>%
+  na.omit() %>%
+  #right_join(uniques, by = c("Domain", "Genome_ID", "Similarity_bin")) %>%
+  mutate(Scaffold_Read_Depth = ifelse(is.na(Scaffold_Read_Depth), 0, Scaffold_Read_Depth)) %>%
+  select(Environment_KL, Similarity_bin, Scaffold_Read_Depth) %>% # For convenience when I'm looking at the DF
+  
+  # Calculate the sum sequence read depth for each domain
+  group_by(Environment_KL) %>%
+  mutate(total.read.depth = sum(Scaffold_Read_Depth))  %>%
+  
+  # Then calculate the fraction of that read depth taht is in each bin
+  group_by(Environment_KL, Similarity_bin) %>%
+  summarise(PctN = sum(Scaffold_Read_Depth) / total.read.depth[1]) %>%
+  
+  # Check that the percentages add to 1
+  group_by(Environment_KL) %>%
+  mutate(check.sum = sum(PctN)) %>%
+  spread(key = Similarity_bin, value = PctN)
+
+
+# Do same analysis, but for soils + Terrestrial Subsurface only
+read_depth_per_coarse_bin_terrestrial_plus_soils <- mg_16S_coarsebin %>%
+  na.omit() %>%
+  filter(Environment_KL == "Soil" | Environment_KL == "Terrestrial subsurface") %>%
+  ungroup() %>%
+  select(-Environment_KL) %>%
+  mutate(Scaffold_Read_Depth = ifelse(is.na(Scaffold_Read_Depth), 0, Scaffold_Read_Depth)) %>%
+  select(Similarity_bin, Scaffold_Read_Depth) %>% # For convenience when I'm looking at the DF
+  
+  # Calculate the sum sequence read depth for each domain
+  mutate(total.read.depth = sum(Scaffold_Read_Depth))  %>%
+  
+  # Then calculate the fraction of that read depth taht is in each bin
+  group_by(Similarity_bin) %>%
+  summarise(PctN = sum(Scaffold_Read_Depth) / total.read.depth[1]) %>%
+  
+  # Check that the percentages add to 1
+  mutate(check.sum = sum(PctN)) %>%
+  spread(key = Similarity_bin, value = PctN)
+
+
+
+if(print.plots) {
+  print(read_depth_per_coarse_bin_table1)
+  print(read_depth_per_coarse_bin_terrestrial_plus_soils)
+}
+
+if(save.files) {
+  write_csv(read_depth_per_coarse_bin_table1, "results/data_for_table1_metagenomes.csv")
+  write_csv(read_depth_per_coarse_bin_terrestrial_plus_soils, "results/data_for_table1_metatrgenomes_terrestrial_plus_soils_only.csv")
+}
+
+
+#####
+# Now metatranscriptomes
+# Note that I don't have scaffold read depths for these
+#####
+# All metagenomes w/ read depth into broad bins (cultured, semicultured, uncultured)
+
+trans_coarsebin <- trans %>%
+  select(Locus_Tag, Genome_ID, Environment_KL, Domain.mg, Domain.mothur, Phylum, Class, Order, Family, Genus, full.tax, pident.against.cultures) %>%
+  
+  # Make similarity bins
+  select(Domain.mg, Environment_KL, Genome_ID, pident.against.cultures) %>% # for ease of reading
+  mutate(Similarity_bin = cut(pident.against.cultures, 
+                              breaks = c(-Inf, 86, 96.6 + 1e-8, Inf),
+                              labels = c("Uncultured phyla", "Uncultured genera to classes", "Cultured"),
+                              right = FALSE,
+                              include.lowest = TRUE),
+         Similarity_bin = factor(Similarity_bin, levels = c("Cultured", "Uncultured genera to classes", "Uncultured phyla"), ordered = TRUE))
+
+# For each domain, environment type, calculate the percent of each metagenome that is in each bin
+n_trans_seqs_per_coarsebins <- trans_coarsebin %>%
+  na.omit() %>%
+  ungroup() %>%
+  #right_join(uniques, by = c("Domain", "Genome_ID", "Similarity_bin")) %>%
+  #mutate(Scaffold_Read_Depth = ifelse(is.na(Scaffold_Read_Depth), 0, Scaffold_Read_Depth)) %>%
+  #select(Domain.mg, Similarity_bin, Scaffold_Read_Depth) %>% # For convenience when I'm looking at the DF
+  
+  group_by(Environment_KL) %>%
+  mutate(total.seqs = n()) %>%
+  group_by(Environment_KL, Similarity_bin) %>%
+  summarise(PctN = n() / total.seqs[1]) %>% # Man I really don't like that name
+  
+  # Check the  fractions
+  group_by(Environment_KL) %>%
+  mutate(check.sum  = sum(PctN))
+
+n_trans_seqs_per_coarsebins_terrestrial_plus_soils <- trans_coarsebin %>%
+  na.omit() %>%
+  filter(Environment_KL == "Soil" | Environment_KL == "Terrestrial subsurface") %>%
+  ungroup() %>%
+  #right_join(uniques, by = c("Domain", "Genome_ID", "Similarity_bin")) %>%
+  #mutate(Scaffold_Read_Depth = ifelse(is.na(Scaffold_Read_Depth), 0, Scaffold_Read_Depth)) %>%
+  #select(Domain.mg, Similarity_bin, Scaffold_Read_Depth) %>% # For convenience when I'm looking at the DF
+  
+  group_by(Environment_KL) %>%
+  mutate(total.seqs = n()) %>%
+  group_by(Environment_KL, Similarity_bin) %>%
+  summarise(PctN = n() / total.seqs[1]) %>% # Man I really don't like that name
+  
+  # Check the  fractions
+  group_by(Environment_KL) %>%
+  mutate(check.sum  = sum(PctN))
+  
+if(save.files) {
+  write_csv(n_trans_seqs_per_coarsebins, "results/data_for_table1_metatranscriptomes.csv")
+  write_csv(n_trans_seqs_per_coarsebins_terrestrial_plus_soils, "results/data_for_table1_metatranscriptomes_terrestrial_plus_soils_only.csv")
+}
+```
+
+
+```{r similarithy_by_4_methods}
+
+# Add finebins to all sequences
+
+####
+# First process the metagenome data with read depths
+####
+
+# Separately prcess the 16S data with read depths
+mg_16S_finebin <- met %>%
+  select(Domain.mg, Environment_KL, Genome_ID, pident.against.cultures, Scaffold_Read_Depth) %>%
+  mutate(Similarity_bin = cut(pident.against.cultures, 
+                              breaks = c(-Inf, seq(from=70, to=99.5, by=0.5), Inf),
+                              labels = paste0(">", seq(from=69.5, to=99.5, by=0.5)),
+                              right = FALSE,
+                              include.lowest = TRUE)) 
+
+# Create numeric similarity bins
+num.bins <- seq(from = 69.5, to = 99.5, by = 0.5)
+names(num.bins) <- paste0(">", seq(from=69.5, to=99.5, by=0.5))
+
+mg_16S_finebin <- mg_16S_finebin %>%
+  mutate(numeric.bins = num.bins[Similarity_bin])
+
+met_weighted <- mg_16S_finebin %>%
+  #na.omit() %>%
+  #right_join(uniques, by = c("Domain", "Genome_ID", "Similarity_bin")) %>%
+  mutate(Scaffold_Read_Depth = ifelse(is.na(Scaffold_Read_Depth), 0,
+                                      Scaffold_Read_Depth)) %>%
+  select(Domain.mg, Similarity_bin, numeric.bins, Scaffold_Read_Depth) %>% # For convenience when I'm looking at the DF
+  
+  # Calculate the sum sequence read depth for each domain
+  group_by(Domain.mg) %>%
+  mutate(total.read.depth = sum(Scaffold_Read_Depth))  %>%
+  
+  # Then calculate the fraction of that read depth taht is in each bin
+  group_by(Domain.mg, Similarity_bin, numeric.bins) %>%
+  summarise(frac.seqs = sum(Scaffold_Read_Depth) / total.read.depth[1]) %>%
+  
+  # Check that the percentages add to 1
+  group_by(Domain.mg) %>%
+  mutate(check.sum = sum(frac.seqs)) %>%
+  mutate(method = "read depth-weighted\nmetagenomes") %>%
+  rename(Domain = Domain.mg) %>%
+  select(method, Domain, numeric.bins, frac.seqs, check.sum)
+
+######
+# Classify met, trans and amp into fine bins
+######
+
+
+met_finebin <- met %>%
+  select(Domain.mg, pident.against.cultures) %>%
+  rename(Domain = Domain.mg) %>%
+  mutate(method = "metagenomes")
+
+trans_finebin <- trans %>%
+  select(Domain.mg, pident.against.cultures) %>%
+  rename(Domain = Domain.mg) %>%
+  mutate(method = "transcriptomes")
+
+# Re-read and re-process amplicon data
+amp.envts <- c("bioreactor" = "Bioreactor", "freshwater" = "Freshwater", "Host/built" = "Host-associated",
+               "Hot spring" = "Hot spring", "Hydrothermal Vent" = "Hydrothermal vent", "Hypersaline" = "Hypersaline",
+               "Marine sediment" = "Marine sediment", "seawater" = "Seawater", "soil" = "Soil", 
+               "terrestrial subsurface" = "Terrestrial subsurface", "host" = "Host-associated", 
+               "human" = "Human", "human-adjacent" = "Human-adjacent", "Hydrothermal vent" = "Hydrothermal vent",
+               "marine sediment" = "Marine sediment", "rock" = "Rock", "snow-rain-glaciers" = "Snow")
+
+amp_finebin <- read_csv("data/amplicons.csv", col_types = "ccdcc") %>%
+  # We don't need Genome_ID
+  # Domain is directly encoded so we don't need to grep to figure it out
+  mutate(Environment_KL = amp.envts[Environment_KL]) %>%
+  select(Environment_KL, Domain, pident.against.cultures) %>%
+  mutate(method = "amplicons")
+
+
+# Collect sequences into bins & express as fraction of total bins
+
+all_unweighted <- bind_rows(amp_finebin, met_finebin, trans_finebin)  %>%
+  # Calculate total sequences in each bin
+  group_by(method, Domain) %>%
+  
+  # Create numeric bins as a factor then create equivalent numeric column
+  mutate(Similarity_bin = cut(pident.against.cultures, 
+                              breaks = c(-Inf, seq(from=70, to=99.5, by=0.5), Inf),
+                              labels = paste0(">", seq(from=69.5, to=99.5, by=0.5)),
+                              right = FALSE,
+                              include.lowest = TRUE)) %>%
+  mutate(numeric.bins = num.bins[Similarity_bin]) %>%
+  
+  # Calculate fraction of sequences in each bin
+  group_by(method, Domain) %>%
+  mutate(sum.seqs = n()) %>%
+  group_by(method, Domain, numeric.bins) %>%
+  summarise(frac.seqs = n() / sum.seqs[1]) %>%
+  group_by(method, Domain) %>%
+  mutate(check.sum = sum(frac.seqs)) %>% 
+  ungroup() %>%
+  select(method, Domain, numeric.bins, frac.seqs, check.sum) 
+
+# Put all the data frames together
+all_finebin <- bind_rows(all_unweighted, met_weighted)
+
+# Fix arc/bac
+all_finebin <- all_finebin %>%
+  mutate(Domain = factor(Domain, levels=c("Bacteria","Archaea"), ordered = TRUE))
+
+p_finebins <- ggplot(all_finebin, aes(x=numeric.bins, y=frac.seqs, colour = method)) + 
+  geom_line() + 
+  scale_x_reverse(name = "Similarity to closest cultured relative") + 
+  scale_y_continuous(name = "Fraction of sequences", labels = percent) + 
+  scale_color_brewer(type = "qual", palette = "Set1") +
+  facet_wrap(~Domain, ncol = 1) + 
+  guides(colour=guide_legend(nrow=2, byrow=TRUE)) +
+  coord_cartesian(ylim = c(0, 0.12)) + 
+  theme_bw() + 
+  theme(text = element_text(size = 8),
+        panel.grid = element_blank(), 
+        legend.position = "top") 
+
+if(print.plots) {
+  print(p_finebins)
+}
+
+if(save.files) {
+  ggsave("plots/similarity_in_fine_bins_ColorBrewer.png", height = 4, width = 3.5, units = "in", dpi = 300)
+  write_csv(all_finebin, "results/similarity_in_fine_bins.csv")
+}
+
+```
+
+
+# Culturedness by individual metagenome
+The "pretty plot"
+```{r, by_indivi_metagenome}
+# # 
+# # Set up a vector of correspondance between environments and genome_IDs
+table_of_envts <- mg_16S_coarsebin %>% 
+  select(Genome_ID, Environment_KL) %>%# works but need to fill in environment
+  group_by(Genome_ID) %>%
+  mutate(n.unique.envts = length(unique(Environment_KL))) %>%
+  summarise(Environment_KL = Environment_KL[1]) 
+vec_of_envts <- table_of_envts$Environment_KL
+names(vec_of_envts) <- table_of_envts$Genome_ID
+
+
+# For each domain, environment type, calculate the percent of each metagenome that is in each bin
+unfiltered_pct_sim_by_metagenome <- mg_16S_coarsebin %>%
+  #sample_n(20) %>%
+  right_join(uniques, by = c("Domain.mg", "Genome_ID", "Similarity_bin")) %>%
+  mutate(Scaffold_Read_Depth = ifelse(is.na(Scaffold_Read_Depth), 0, Scaffold_Read_Depth)) %>%
+  select(Domain.mg, Environment_KL, Genome_ID, Similarity_bin, Scaffold_Read_Depth) # For convenience when I'm looking at the DF
+  
+  # Since Genome_ID and Environment_KL are redundant, must now fill in all the missing Environments - 
+  # do *another* join on a table of genome_IDs and environments
+unfiltered_pct_sim_by_metagenome$Environment_KL <- vec_of_envts[unfiltered_pct_sim_by_metagenome$Genome_ID ]
+  
+  # Calculate number of genomes 
+filtered_pct_sim_by_metagenome <- unfiltered_pct_sim_by_metagenome %>%
+  group_by(Genome_ID, Similarity_bin, Domain.mg, Environment_KL) %>%
+  summarise(n_sequences = sum(Scaffold_Read_Depth)) %>%
+  group_by(Domain.mg, Environment_KL, Genome_ID) %>%
+  
+  # Calculate the percent of sequences in each similarity bin
+  mutate(PctN = n_sequences / sum(n_sequences, na.rm = TRUE)) %>%# This calculates the fraction of each metagenome that is in each similarity bin
+  arrange(Domain.mg, Environment_KL, Genome_ID, Similarity_bin) %>%
+  select(c("Domain.mg", "Environment_KL", "Genome_ID", "Similarity_bin", "n_sequences", "PctN")) %>%
+  
+  # Now delete the Genome_IDs that don't have any representatives in a domain
+  group_by(Domain.mg, Genome_ID) %>%
+  mutate(deleteme = ifelse(sum(n_sequences) == 0, TRUE, FALSE)) %>%
+  filter(!deleteme)  %>%
+  select(-deleteme)# That shrinks the data frame by about 4%, seems reasonable
+  # 7473 rows, which seems totally reasonable
+ 
+  # Now calculate average similarity of each domain & environment combination 
+avg_pct_by_envt <- filtered_pct_sim_by_metagenome %>%  
+  group_by(Domain.mg, Environment_KL, Similarity_bin) %>%
+  summarise(mean.similarity = mean(PctN),
+            median.similarity = median(PctN),
+            std.dev.similarity = sd(PctN)) %>%
+  group_by(Domain.mg, Environment_KL) %>%
+  mutate(check.sum = sum(mean.similarity))
+
+###
+# Distribution plots
+###
+
+# Put the Archaea and the bacteria together in one plot, ordered by bacteria % cultured
+cultured_bac_by_metagenome <- avg_pct_by_envt %>%
+  filter(Domain.mg == "Bacteria", Similarity_bin == "Cultured")
+bac.order <- unique(cultured_bac_by_metagenome$Environment_KL)[order(cultured_bac_by_metagenome$median.similarity, decreasing = TRUE)]
+# bac.order <- unique(avg_pct_by_envt$Environment_KL)[order(avg_pct_by_envt$median.similarity, decreasing = TRUE)]
+
+
+# Reorder the factor
+df_to_plot <- filtered_pct_sim_by_metagenome %>%
+  mutate(envt.to.plot = factor(Environment_KL, levels = bac.order, ordered = TRUE))
+
+# # Want to export the colors so I can use them in the dot plot
+# unique(df_to_plot$envt.to.plot)
+# my_scale <- scale_colour_discrete(12)
+# 
+# # useful if I decide to go with teh rwantshue scheme
+# scheme <- iwanthue(seed = 42, force_init = TRUE) # recreate with a seed
+
+# Set up labelling function
+f <- as_labeller(function(x) {
+  c("Cultured" = "Cultured", 
+    "Uncultured genera to classes" = "Uncultured\nClass to Genus",
+    "Uncultured phyla" = "Uncultured\nPhylum",
+    "Archaea" = "Archaea",
+    "Bacteria" = "Bacteria")[x]
+})
+
+# Colors from viridis scheme (compile_bulk_analyses.R)
+col.scheme <- structure(c("#440154FF", "#481D6FFF", "#453581FF", "#3D4D8AFF", 
+                          "#34618DFF", "#2B748EFF", "#24878EFF", "#1F998AFF", "#25AC82FF", 
+                          "#40BC72FF", "#67CC5CFF", "#97D83FFF", "#CBE11EFF", "#FDE725FF"), 
+                        .Names = c("Human", "Human-adjacent", "Snow", "Hot spring", 
+                                   "Host-associated", "Seawater", "Freshwater", "Terrestrial subsurface", 
+                                   "Bioreactor", "Soil", "Hydrothermal vent", "Rock", "Hypersaline", 
+                                   "Marine sediment"))
+
+# edit col.scheme down to the enviroments in this sete
+col.scheme.edit <- col.scheme[names(col.scheme) %in% unique(df_to_plot$envt.to.plot)]
+
+p_arc_bac_boxplot <- ggplot(df_to_plot, aes(x=envt.to.plot, y = PctN, colour = envt.to.plot)) +
+#p_arc_bac_boxplot <- ggplot(df_to_plot, aes(x=envt.to.plot, y = PctN)) +
+  geom_boxplot(outlier.shape = NA) + 
+  geom_point(position = position_jitter(width = 0.25), alpha = 0.1) + 
+  scale_y_continuous(labels = percent) + 
+  xlab("Environment") +
+  ylab("Fraction in bin") +
+  #scale_color_manual(values = scheme$hex(12)) +
+  #scale_color_manual(values = viridis(12)) + 
+  scale_color_manual(name = "Environment", values = col.scheme.edit) + 
+  facet_grid(Similarity_bin ~ Domain.mg, labeller = f) + 
+  theme_bw() + 
+  theme(text = element_text(size = 8),
+        axis.text.x = element_text(angle = -45, hjust = 0)) 
+
+
+if(save.files) {
+  write_csv(df_to_plot, "results/arc_bac_boxplot.csv")
+  ggsave("plots/arc_bac_boxplot.png", p_arc_bac_boxplot, height = 4, width = 7, units = "in", dpi = 300)
+  write_csv(avg_pct_by_envt, "results/arc_bac_boxplot_summary.csv")
+}
+if(print.plots) {
+  print(p_arc_bac_boxplot)
+}
+
+if(save.files) {
+  write_csv(filtered_pct_sim_by_metagenome, file="results/arc_bac_boxplot.csv")
+  
+}
+
+```
+
+
+# Figure 1
+
+```{r make_identity_plots}
+# Taken from "compile_bulk_analyses.R"
+
+
+# # Do the individual analyses for each data set: metagenomes, transcriptomes, amplicons
+# met <- preprocess_ome_data(ome.fn = "data/All_metagenomes_over90_length_to_either_culture_or_NR_sizes.csv",
+#                                mothur.fn = "data/metagenomes_all.filter.precluster.nr_v128.wang.csv",
+#                                merged.data.fn = "data/deleteme.csv", # because this is already saved by the first metagenome preprocess step
+#                            ome.type = "metagenome",
+#                                save.files = save.files) 
+
+# I have already defined met above
+
+# n_unclassified_met <- met %>%
+#   filter(Order == "unclassified") %>%
+#   nrow() %>%
+#   print() # none
+
+met <- met %>%
+  process_abundance_no_read_depth() %>%
+  rename(Domain = Domain.mg) %>%
+  mutate(method = "metagenomes")
+
+# trans <- preprocess_ome_data(ome.fn = "data/transcriptomes_all_over90pct_alignedNR_or_cultures.csv",
+#                                        mothur.fn = "data/transcriptomes.precluster.nr_v132.wang.csv",
+#                                        merged.data.fn = "results/merged_metatranscriptome_16S_data.csv",
+#                               ome.type = "transcriptome",
+#                                        save.files = save.files) 
+
+# n_unclassified_trans <- trans %>%
+#   filter(Order == "unclassified") %>%
+#   nrow() %>% print()
+
+
+
+#trans$Environment_KL[trans$Environment_KL == "Host"] <- "Host-associated" # It was originally host in the data set; turning into Host-associated
+trans <- trans %>% # 
+  process_abundance_no_read_depth() %>%
+  rename(Domain = Domain.mg) %>%
+  mutate(method = "transcripts") # No
+#trans$method <- "transcripts" # This is filtered for chloroplasts and mitochondria by transcripts_no_read_depth
+
+amp <- amplicons_no_read_depth() # Amplicon processing is different because at this point we have no mothur output for them
+amp$method <- "amplicons" # Need to alter amp to turn factors into teh same form as met and trans
+# amplicon database should have no chloroplasts or mitochondria
+
+# Combine & order environments as desired
+#    Currently environments are based on the ones in metagenome
+all_sims <- met %>%
+  bind_rows(trans) %>%
+  bind_rows(amp) %>% 
+  ungroup() #%>%
+  #mutate(Environment_KL = factor(Environment_KL)) 
+
+# Check environments
+unique(all_sims$Environment_KL) # THere are 14, equal to the number in amplicons, which seems right
+
+# Put the environments in order of decreasing fraction cultured in Bacteria metagenomes
+
+# Set environment order, which is not drawn from these data
+# ...but from the dot/boxplot, Fig 2
+envt.order <- c("Human-adjacent", "Human", "Hypersaline", "Hot spring", "Soil", "Bioreactor",
+                "Host-associated", "Seawater", "Terrestrial subsurface", "Freshwater",
+                "Marine sediment", "Snow", "Hydrothermal vent", "Rock")
+# Convert into an ordered factor
+all_sims <- all_sims %>%
+  mutate(envt.ordered = factor(Environment_KL, levels = envt.order, ordered = TRUE))
+
+# bac_amp <- all_sims %>%
+#   ungroup() %>%
+#   filter(Domain == "Bacteria" & Similarity_bin == "cultured" & method == "amplicons") %>%
+#   select(Environment_KL, PctN) 
+# 
+# bac.amp.envs <- bac_amp$Environment_KL[order(bac_amp$PctN, decreasing = TRUE)]
+# 
+# all_sims$env.ordered = factor(all_sims$Environment_KL, levels = bac.amp.envs, ordered = TRUE)
+
+all_sims$sim.bin.ordered = factor(all_sims$Similarity_bin, 
+                                  levels = c("cultured", 
+                                             "uncultured genus to class", 
+                                             "uncultured phylum"),
+                                  ordered = TRUE)
+
+all_sims$Domain <- factor(all_sims$Domain, levels = c("Bacteria", "Archaea"), ordered = TRUE)
+
+
+# Set up labelling function
+f <- as_labeller(function(x) {
+  c("cultured" = "Cultured", 
+    "uncultured genus to class" = "Uncultured\nClass to Genus",
+    "uncultured phylum" = "Uncultured\nPhylum",
+    "Archaea" = "Archaea",
+    "Bacteria" = "Bacteria")[x]
+})
+
+
+# Set up a color scheme such that each environment is colored identically across figures
+col.scheme = viridis(14)
+names(col.scheme) = levels(all_sims$envt.ordered)
+# met
+
+make_identity_plots <- function(df) {
+  # p_bulk_identity <- ggplot(df, aes(x=envt.ordered, y = PctN, shape = method, colour = Environment_KL)) + 
+    p_bulk_identity <- ggplot(df, aes(x=envt.ordered, y = PctN, shape = method)) + 
+    geom_point() + 
+    scale_x_discrete(name = "Environment") + 
+    scale_y_continuous(name = "Fraction in Bin", labels = percent) + 
+    scale_color_manual(name = "Environment", values = col.scheme,
+                       guide = FALSE) + 
+    scale_shape_manual(values = c(16, 1, 3)) + 
+    facet_grid(sim.bin.ordered ~ Domain, labeller = f) + 
+    expand_limits(y = c(0, 1.05)) + 
+    guides(shape = guide_legend(#keyheight = 0.12, 
+                                keywidth =  0.1,
+                                default.unit = "inches")) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = -45, hjust = 0),
+          text = element_text(size = 7),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          legend.position = "top") 
+  
+  p_bulk_identity
+}
+
+p_all <-all_sims %>%
+  make_identity_plots()
+
+
+if(print.plots) {
+  print(p_all)
+}
+
+if(save.files) {
+  ggsave("plots/similarity_by_method_BW.png", p_all, height = 4, width = 3.5, units = "in", dpi = 300)
+  write.csv(all_sims, "results/similarity_by_method.csv")
+}
+```
+
+
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
+.
