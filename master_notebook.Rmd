@@ -131,7 +131,7 @@ if(save.files) {
 # Will calculate this using read depth for metagenomes, but simple read abundance for transcripts
 # Because read depth is not available
 
-read_depth_per_coarse_bin_table1 <-mg_16S_coarsebin %>%
+read_depth_per_coarse_bin_table1 <- mg_16S_coarsebin %>%
   na.omit() %>%
   #right_join(uniques, by = c("Domain", "Genome_ID", "Similarity_bin")) %>%
   mutate(Scaffold_Read_Depth = ifelse(is.na(Scaffold_Read_Depth), 0, Scaffold_Read_Depth)) %>%
@@ -351,15 +351,15 @@ all_finebin <- bind_rows(all_unweighted, met_weighted)
 all_finebin <- all_finebin %>%
   mutate(Domain = factor(Domain, levels=c("Bacteria","Archaea"), ordered = TRUE))
 
-p_finebins <- ggplot(all_finebin, aes(x=numeric.bins, y=frac.seqs, colour = method)) + 
+p_finebins <- ggplot(all_finebin, aes(x=numeric.bins, y=frac.seqs*100, colour = method)) + 
   geom_line() + 
-  scale_x_reverse(name = "Similarity to closest cultured relative", 
-                  breaks = c(100, 90, 80, 70), labels = c("100%", "90%", "80%", "70%")) + 
-  scale_y_continuous(name = "Fraction of sequences (%)", labels = percent) + 
+  scale_x_reverse(name = "Similarity to closest cultured relative (%)", 
+                  breaks = c(100, 90, 80, 70)) + 
+  scale_y_continuous(name = "Fraction of sequences (%)") + 
   scale_color_brewer(type = "qual", palette = "Set1") +
   facet_wrap(~Domain, ncol = 1) + 
   guides(colour=guide_legend(title = NULL, nrow=2, byrow=TRUE)) +
-  coord_cartesian(ylim = c(0, 0.12)) + 
+  coord_cartesian(ylim = c(0, 12)) + 
   theme_bw() + 
   theme(text = element_text(size = 8),
         #legend.text = element_text(size = 7, margin = margin(0, 0, 0, 0, "pt")),
@@ -369,10 +369,9 @@ p_finebins <- ggplot(all_finebin, aes(x=numeric.bins, y=frac.seqs, colour = meth
         legend.position = c(0.61, 0.93)) 
 
 if(save.files) {
-  ggsave("plots/similarity_in_fine_bins_ColorBrewer.pdf", p_finebins, height = 4, width = 3.5, units = "in", dpi = 300)
+  ggsave("plots/resubmission/similarity_in_fine_bins_ColorBrewer.tiff", p_finebins, height = 4, width = 3.5, units = "in", dpi = 300)
   write_csv(all_finebin, "results/similarity_in_fine_bins.csv")
 }
-
 
 if(print.plots) {
   print(p_finebins)
@@ -395,6 +394,13 @@ table_of_envts <- mg_16S_coarsebin %>%
 vec_of_envts <- table_of_envts$Environment_KL
 names(vec_of_envts) <- table_of_envts$Genome_ID
 
+# Create a data frame of all possible combinations of Domain, Genome_ID, and Similarity_bin
+uniques <- expand.grid(Domain.mg = unique(mg_16S_coarsebin$Domain.mg),
+                       # Environment_KL = unique(metagenomes_to_count$Environment_KL),
+                       Genome_ID = unique(mg_16S_coarsebin$Genome_ID),
+                       Similarity_bin = unique(mg_16S_coarsebin$Similarity_bin),
+                       stringsAsFactors = FALSE)
+
 
 # For each domain, environment type, calculate the percent of each metagenome that is in each bin
 unfiltered_pct_sim_by_metagenome <- mg_16S_coarsebin %>%
@@ -407,7 +413,7 @@ unfiltered_pct_sim_by_metagenome <- mg_16S_coarsebin %>%
   # do *another* join on a table of genome_IDs and environments
 unfiltered_pct_sim_by_metagenome$Environment_KL <- vec_of_envts[unfiltered_pct_sim_by_metagenome$Genome_ID ]
   
-  # Calculate number of genomes 
+# Calculate number of genomes 
 filtered_pct_sim_by_metagenome <- unfiltered_pct_sim_by_metagenome %>%
   group_by(Genome_ID, Similarity_bin, Domain.mg, Environment_KL) %>%
   summarise(n_sequences = sum(Scaffold_Read_Depth)) %>%
@@ -425,7 +431,7 @@ filtered_pct_sim_by_metagenome <- unfiltered_pct_sim_by_metagenome %>%
   select(-deleteme)# That shrinks the data frame by about 4%, seems reasonable
   # 7473 rows, which seems totally reasonable
  
-  # Now calculate average similarity of each domain & environment combination 
+# Now calculate average similarity of each domain & environment combination 
 avg_pct_by_envt <- filtered_pct_sim_by_metagenome %>%  
   group_by(Domain.mg, Environment_KL, Similarity_bin) %>%
   summarise(mean.similarity = mean(PctN),
@@ -465,37 +471,38 @@ f <- as_labeller(function(x) {
     "Bacteria" = "Bacteria")[x]
 })
 
-# Colors from viridis scheme (compile_bulk_analyses.R)
-col.scheme <- structure(c("#440154FF", "#481D6FFF", "#453581FF", "#3D4D8AFF", 
-                          "#34618DFF", "#2B748EFF", "#24878EFF", "#1F998AFF", "#25AC82FF", 
-                          "#40BC72FF", "#67CC5CFF", "#97D83FFF", "#CBE11EFF", "#FDE725FF"), 
-                        .Names = c("Human", "Human-adjacent", "Snow", "Hot spring", 
-                                   "Host-associated", "Seawater", "Freshwater", "Terrestrial subsurface", 
-                                   "Bioreactor", "Soil", "Hydrothermal vent", "Rock", "Hypersaline", 
-                                   "Marine sediment"))
+# # Colors from viridis scheme (compile_bulk_analyses.R)
+# col.scheme <- structure(c("#440154FF", "#481D6FFF", "#453581FF", "#3D4D8AFF", 
+#                           "#34618DFF", "#2B748EFF", "#24878EFF", "#1F998AFF", "#25AC82FF", 
+#                           "#40BC72FF", "#67CC5CFF", "#97D83FFF", "#CBE11EFF", "#FDE725FF"), 
+#                         .Names = c("Human", "Human-adjacent", "Snow", "Hot spring", 
+#                                    "Host-associated", "Seawater", "Freshwater", "Terrestrial subsurface", 
+#                                    "Bioreactor", "Soil", "Hydrothermal vent", "Rock", "Hypersaline", 
+#                                    "Marine sediment"))
 
-# edit col.scheme down to the enviroments in this sete
-col.scheme.edit <- col.scheme[names(col.scheme) %in% unique(df_to_plot$envt.to.plot)]
+# # edit col.scheme down to the enviroments in this sete
+# col.scheme.edit <- col.scheme[names(col.scheme) %in% unique(df_to_plot$envt.to.plot)]
 
-p_arc_bac_boxplot <- ggplot(df_to_plot, aes(x=envt.to.plot, y = PctN, colour = envt.to.plot)) +
+p_arc_bac_boxplot <- ggplot(df_to_plot, aes(x=envt.to.plot, y = PctN*100)) +
 #p_arc_bac_boxplot <- ggplot(df_to_plot, aes(x=envt.to.plot, y = PctN)) +
   geom_boxplot(outlier.shape = NA) + 
-  geom_point(position = position_jitter(width = 0.25), alpha = 0.1) + 
-  scale_y_continuous(labels = percent) + 
+  geom_point(position = position_jitter(width = 0.25), alpha = 0.1, size = 0.5) + 
+  #scale_y_continuous(labels = percent) + 
   xlab("Environment") +
-  ylab("Fraction in bin") +
+  ylab("Proportion of sequences (%)") +
   #scale_color_manual(values = scheme$hex(12)) +
   #scale_color_manual(values = viridis(12)) + 
   scale_color_manual(name = "Environment", values = col.scheme.edit) + 
   facet_grid(Similarity_bin ~ Domain.mg, labeller = f) + 
   theme_bw() + 
   theme(text = element_text(size = 8),
-        axis.text.x = element_text(angle = -45, hjust = 0)) 
+        axis.text.x = element_text(angle = -45, hjust = 0),
+        axis.title.x = element_blank()) 
 
 
 if(save.files) {
   write_csv(df_to_plot, "results/arc_bac_boxplot.csv")
-  ggsave("plots/arc_bac_boxplot.png", p_arc_bac_boxplot, height = 4, width = 7, units = "in", dpi = 300)
+  ggsave("plots/resubmission/arc_bac_boxplot.pdf", p_arc_bac_boxplot, height = 4, width = 7, units = "in", dpi = 300)
   write_csv(avg_pct_by_envt, "results/arc_bac_boxplot_summary.csv")
 }
 if(print.plots) {
@@ -510,7 +517,7 @@ if(save.files) {
 ```
 
 
-# Figure 1
+# Figure 2
 
 ```{r make_identity_plots}
 # Taken from "compile_bulk_analyses.R"
@@ -629,15 +636,17 @@ make_identity_plots <- function(df) {
                                 default.unit = "inches")) +
     theme_bw() +
     theme(axis.text.x = element_text(angle = -45, hjust = 0),
+          axis.title.x = element_blank(),
           text = element_text(size = 7),
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
+          legend.text = element_text(margin = margin(4, 4, 4, 4, "cm")),
           legend.position = "top") 
   
   p_bulk_identity
 }
 
-p_all <-all_sims %>%
+p_all <- all_sims %>%
   make_identity_plots()
 
 
@@ -646,27 +655,10 @@ if(print.plots) {
 }
 
 if(save.files) {
-  ggsave("plots/similarity_by_method_BW.png", p_all, height = 4, width = 3.5, units = "in", dpi = 300)
+  ggsave("plots/resubmission/similarity_by_method_BW.png", p_all, height = 4, width = 3.5, units = "in", dpi = 300)
   write.csv(all_sims, "results/similarity_by_method.csv")
 }
 ```
 
 
-.
-.
-.
-.
-.
-.
-.
-.
-.
-.
-.
-.
-.
-.
-.
-.
-.
-.
+
