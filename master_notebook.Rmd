@@ -353,25 +353,31 @@ all_finebin <- all_finebin %>%
 
 p_finebins <- ggplot(all_finebin, aes(x=numeric.bins, y=frac.seqs, colour = method)) + 
   geom_line() + 
-  scale_x_reverse(name = "Similarity to closest cultured relative") + 
-  scale_y_continuous(name = "Fraction of sequences", labels = percent) + 
+  scale_x_reverse(name = "Similarity to closest cultured relative", 
+                  breaks = c(100, 90, 80, 70), labels = c("100%", "90%", "80%", "70%")) + 
+  scale_y_continuous(name = "Fraction of sequences (%)", labels = percent) + 
   scale_color_brewer(type = "qual", palette = "Set1") +
   facet_wrap(~Domain, ncol = 1) + 
-  guides(colour=guide_legend(nrow=2, byrow=TRUE)) +
+  guides(colour=guide_legend(title = NULL, nrow=2, byrow=TRUE)) +
   coord_cartesian(ylim = c(0, 0.12)) + 
   theme_bw() + 
   theme(text = element_text(size = 8),
+        #legend.text = element_text(size = 7, margin = margin(0, 0, 0, 0, "pt")),
+        legend.text = element_text(size = 7, margin = margin(l = 0, r = 0, t = 0, b = 0)),
         panel.grid = element_blank(), 
-        legend.position = "top") 
+        legend.background = element_rect(fill = NA),
+        legend.position = c(0.61, 0.93)) 
+
+if(save.files) {
+  ggsave("plots/similarity_in_fine_bins_ColorBrewer.pdf", p_finebins, height = 4, width = 3.5, units = "in", dpi = 300)
+  write_csv(all_finebin, "results/similarity_in_fine_bins.csv")
+}
+
 
 if(print.plots) {
   print(p_finebins)
 }
 
-if(save.files) {
-  ggsave("plots/similarity_in_fine_bins_ColorBrewer.png", height = 4, width = 3.5, units = "in", dpi = 300)
-  write_csv(all_finebin, "results/similarity_in_fine_bins.csv")
-}
 
 ```
 
