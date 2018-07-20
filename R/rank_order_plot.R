@@ -18,7 +18,8 @@ rank_order_plot <- function(x, linesize, plot.type = "inset") {
           axis.text.x = element_text(angle = -45, hjust = 0),
           axis.title.x = element_blank(),
           panel.grid.major = element_blank(),
-          panel.grid.minor = element_blank())
+          panel.grid.minor = element_blank(),
+          panel.background = element_rect(fill="gray50"))
   
   if(plot.type == "inset") {
     #browser()
