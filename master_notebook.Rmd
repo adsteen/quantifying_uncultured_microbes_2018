@@ -355,7 +355,7 @@ p_finebins <- ggplot(all_finebin, aes(x=numeric.bins, y=frac.seqs*100, colour = 
   geom_line() + 
   scale_x_reverse(name = "Similarity to closest cultured relative (%)", 
                   breaks = c(100, 90, 80, 70)) + 
-  scale_y_continuous(name = "Fraction of sequences (%)") + 
+  scale_y_continuous(name = "Proportion of sequences (%)") + 
   scale_color_brewer(type = "qual", palette = "Set1") +
   facet_wrap(~Domain, ncol = 1) + 
   guides(colour=guide_legend(title = NULL, nrow=2, byrow=TRUE)) +
@@ -366,10 +366,10 @@ p_finebins <- ggplot(all_finebin, aes(x=numeric.bins, y=frac.seqs*100, colour = 
         legend.text = element_text(size = 7, margin = margin(l = 0, r = 0, t = 0, b = 0)),
         panel.grid = element_blank(), 
         legend.background = element_rect(fill = NA),
-        legend.position = c(0.61, 0.93)) 
+        legend.position = c(0.61, 0.92)) 
 
 if(save.files) {
-  ggsave("plots/resubmission/similarity_in_fine_bins_ColorBrewer.tiff", p_finebins, height = 4, width = 3.5, units = "in", dpi = 900, compression = "lzw")
+  ggsave("plots/resubmission/similarity_in_fine_bins_ColorBrewer.tiff", p_finebins, height = 4, width = 3.5, units = "in", dpi = 300, compression = "lzw")
   write_csv(all_finebin, "results/similarity_in_fine_bins.csv")
 }
 
@@ -502,7 +502,7 @@ p_arc_bac_boxplot <- ggplot(df_to_plot, aes(x=envt.to.plot, y = PctN*100)) +
 
 if(save.files) {
   write_csv(df_to_plot, "results/arc_bac_boxplot.csv")
-  ggsave("plots/resubmission/arc_bac_boxplot.tiff", p_arc_bac_boxplot, height = 4, width = 7, units = "in", dpi = 900, compression= "lzw")
+  ggsave("plots/resubmission/arc_bac_boxplot.tiff", p_arc_bac_boxplot, height = 4, width = 7, units = "in", dpi = 300, compression= "lzw")
   write_csv(avg_pct_by_envt, "results/arc_bac_boxplot_summary.csv")
 }
 if(print.plots) {
@@ -510,8 +510,7 @@ if(print.plots) {
 }
 
 if(save.files) {
-  write_csv(filtered_pct_sim_by_metagenome, file="results/arc_bac_boxplot.csv")
-  
+  write_csv(filtered_pct_sim_by_metagenome, path="results/arc_bac_boxplot.csv")
 }
 
 ```
@@ -622,10 +621,10 @@ names(col.scheme) = levels(all_sims$envt.ordered)
 
 make_identity_plots <- function(df) {
   # p_bulk_identity <- ggplot(df, aes(x=envt.ordered, y = PctN, shape = method, colour = Environment_KL)) + 
-    p_bulk_identity <- ggplot(df, aes(x=envt.ordered, y = PctN, shape = method)) + 
+    p_bulk_identity <- ggplot(df, aes(x=envt.ordered, y = PctN * 100, shape = method)) + 
     geom_point() + 
     scale_x_discrete(name = "Environment") + 
-    scale_y_continuous(name = "Fraction in Bin", labels = percent) + 
+    scale_y_continuous(name = "Proportion of sequences (%)") + 
     scale_color_manual(name = "Environment", values = col.scheme,
                        guide = FALSE) + 
     scale_shape_manual(values = c(16, 1, 3)) + 
@@ -640,7 +639,7 @@ make_identity_plots <- function(df) {
           text = element_text(size = 7),
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
-          legend.text = element_text(margin = margin(4, 4, 4, 4, "cm")),
+          legend.text = element_text(margin = margin(0, 0, 0, 0, "cm")),
           legend.position = "top") 
   
   p_bulk_identity
