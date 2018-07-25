@@ -31,7 +31,7 @@ source("R/metagenomes_no_read_depth.R")
 source("R/transcripts_no_read_depth.R") 
 source("R/amplicons_no_read_depth.R") 
 
-save.files <- FALSE
+save.files <- TRUE
 print.plots <- TRUE
 # Make sure that this file is saved in the same directory as the R project so paths work
 ```
@@ -369,7 +369,7 @@ p_finebins <- ggplot(all_finebin, aes(x=numeric.bins, y=frac.seqs*100, colour = 
         legend.position = c(0.61, 0.93)) 
 
 if(save.files) {
-  ggsave("plots/resubmission/similarity_in_fine_bins_ColorBrewer.tiff", p_finebins, height = 4, width = 3.5, units = "in", dpi = 300)
+  ggsave("plots/resubmission/similarity_in_fine_bins_ColorBrewer.tiff", p_finebins, height = 4, width = 3.5, units = "in", dpi = 900, compression = "lzw")
   write_csv(all_finebin, "results/similarity_in_fine_bins.csv")
 }
 
@@ -502,7 +502,7 @@ p_arc_bac_boxplot <- ggplot(df_to_plot, aes(x=envt.to.plot, y = PctN*100)) +
 
 if(save.files) {
   write_csv(df_to_plot, "results/arc_bac_boxplot.csv")
-  ggsave("plots/resubmission/arc_bac_boxplot.pdf", p_arc_bac_boxplot, height = 4, width = 7, units = "in", dpi = 300)
+  ggsave("plots/resubmission/arc_bac_boxplot.tiff", p_arc_bac_boxplot, height = 4, width = 7, units = "in", dpi = 900, compression= "lzw")
   write_csv(avg_pct_by_envt, "results/arc_bac_boxplot_summary.csv")
 }
 if(print.plots) {
@@ -655,7 +655,7 @@ if(print.plots) {
 }
 
 if(save.files) {
-  ggsave("plots/resubmission/similarity_by_method_BW.png", p_all, height = 4, width = 3.5, units = "in", dpi = 300)
+  ggsave("plots/resubmission/similarity_by_method_BW.tiff", p_all, height = 4, width = 3.5, units = "in", dpi = 300, compression = "lzw")
   write.csv(all_sims, "results/similarity_by_method.csv")
 }
 ```

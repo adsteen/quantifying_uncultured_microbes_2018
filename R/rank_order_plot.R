@@ -7,7 +7,8 @@ rank_order_plot <- function(x, linesize, plot.type = "inset") {
     
     #scale_colour_manual(values = c('#1b9e77','#d95f02','#7570b3'))
     #scale_colour_manual(values = c('#7fc97f','#beaed4','#fdc086')) + 
-    scale_colour_manual(name = NULL, values = c("#e64e30","#524ad3","#e3d12c")) + # from I want hue
+    #scale_colour_manual(name = NULL, values = c("#e64e30","#524ad3","#e3d12c")) + # from I want hue - I think this is what we submitted originally
+    scale_colour_manual(name = NULL, values = c("#2ca25f", "#99d8c9", "#e5f5e9")) + # This is colorbrewer BuGn (sequential)
     #scale_colour_manual(name = NULL, values = c('#a6cee3','#1f78b4','#b2df8a')) + #
     #scale_x_reverse() + 
     scale_y_log10(name = "Count") + 
