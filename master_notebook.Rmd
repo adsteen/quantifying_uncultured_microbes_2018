@@ -62,6 +62,7 @@ trans_preprocessed <- preprocess_for_rank_abund(trans)
 
 # Calculate rank order, save plots
 #
+# Note: this calls process_rank_order_data_v2(), which calls rank_order_plot() to actually make the plots
 for(i in seq_along(unique(met_preprocessed$Environment_KL))) {
   curr.envt <- unique(met_preprocessed$Environment_KL)[i]
   curr_df <- filter(met_preprocessed, Environment_KL == curr.envt)
@@ -73,8 +74,11 @@ for(i in seq_along(unique(trans_preprocessed$Environment_KL))) {
   curr.envt <- unique(trans_preprocessed$Environment_KL)[i]
   curr_df <- filter(trans_preprocessed, Environment_KL == curr.envt)
   #print(curr.envt)
-  process_rank_order_data_v2(curr_df, ome.type = "metatranscriptome", envt = curr.envt)
+  p_example <- process_rank_order_data_v2(curr_df, ome.type = "metatranscriptome", envt = curr.envt)
 }
+
+# Make example plot with legend
+#ggsave("plots/rank_abund/resubmit/example_plot_w_legend.tiff", p_example, height =2, width = 2, units = "in", dpi = 900, compression = "lzw", type = "cairo")
 ```
 # Calculate fraction of Bac and Arc in broad similarity bins accounting for read depth
 

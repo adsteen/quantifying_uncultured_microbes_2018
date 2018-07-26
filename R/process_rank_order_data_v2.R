@@ -69,16 +69,19 @@ process_rank_order_data_v2 <- function(my_df, ome.type, envt, n.cutoff = 10, tot
   ###
 
   # actual size, small full plots
-  small.full.plot.fn <- paste0("plots/rank_abund/resubmit/all_rank_actual_size_fig_", envt, "_", ome.type, ".png")
+  small.full.plot.fn <- paste0("plots/rank_abund/resubmit/all_rank_actual_size_fig_", envt, "_", ome.type, ".tiff")
   p_smallplot <- p_main +
     theme(text = element_text(size = 7),
           legend.position = "none",
           axis.title.y = element_blank())
+  
+  
 
   if(save.files) {
-    ggsave(small.full.plot.fn, p_smallplot, height = 7.3 / 6, width = 7.3/6, units = "in", dpi = 300)
+    ggsave(small.full.plot.fn, p_smallplot, height = 7.3 / 6, width = 7.3/6, units = "in", dpi = 900, compression = "lzw", type = "cairo")
   }
 #   
-#   # Return environment name, for lack of a better idea
-  envt
+#   # Return the example plot with the legend in it
+  p <- p_smallplot + theme(legend.position = "right")
+  p
 }
